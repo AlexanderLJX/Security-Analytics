@@ -1,0 +1,360 @@
+"""
+Main entry point for phishing detection system
+"""
+import argparse
+import logging
+import sys
+import numpy as np
+from pathlib import Path
+from datetime import datetime
+from typing import Optional
+
+# Import configurations
+from config import (
+    model_config, training_config, data_config,
+    reasoning_config, inference_config, siem_config
+)
+
+# Import modules
+from data.dataset_loader import PhishingDatasetLoader
+from data.preprocessor import EmailPreprocessor
+from models.qwen_model import QwenPhishingModel
+from models.teacher_model import TeacherModel
+from training.trainer import PhishingTrainer
+from training.reasoning_distillation import ReasoningDistillation
+from evaluation.metrics import PhishingMetrics
+from inference.detector import PhishingDetector
+from inference.siem_integration import SIEMIntegration, PhishingAPI
+from utils.helpers import setup_logging, create_sample_dataset, check_dependencies
+
+def train_model(args):
+    """Train the phishing detection model"""
+    logger = setup_logging(args.log_file)
+    logger.info("Starting training pipeline")
+
+    # Check dependencies
+    if not check_dependencies():
+        sys.exit(1)
+
+    # Load dataset
+    logger.info("Loading dataset...")
+    dataset_loader = PhishingDatasetLoader(data_config)
+
+    # Check if dataset exists, create sample if not
+    if not Path(data_config.dataset_path).exists():
+        logger.warning(f"Dataset not found at {data_config.dataset_path}")
+        logger.info("Creating sample dataset...")
+        # Create CSV sample if parquet dataset is missing
+        sample_path = data_config.dataset_path.replace('.parquet', '.csv')
+        create_sample_dataset(sample_path, num_samples=2000)
+        logger.info(f"Sample dataset created at {sample_path}. Please update config to use this file or provide the correct dataset.")
+
+    base_df = dataset_loader.load_base_dataset()
+
+    # Generate reasoning if needed
+    if args.generate_reasoning:
+        logger.info("Generating reasoning dataset...")
+        teacher = TeacherModel(reasoning_config)
+        distillation = ReasoningDistillation(teacher, dataset_loader, reasoning_config)
+        base_df = distillation.generate_reasoning_dataset(base_df)
+
+        # Export reasoning dataset
+        distillation.export_reasoning_dataset(
+            base_df,
+            Path(data_config.dataset_path).parent / "reasoning_dataset"
+        )
+    else:
+        # Load existing reasoning
+        base_df = dataset_loader.add_reasoning_to_dataset(base_df)
+
+    # Split dataset
+    train_df, val_df, test_df = dataset_loader.prepare_dataset_splits(base_df)
+
+    # Create HF datasets
+    datasets = dataset_loader.create_hf_dataset(train_df, val_df, test_df)
+
+    # Format datasets for training
+    def format_dataset(dataset):
+        def formatting_func(examples):
+            texts = []
+            for convo in examples['conversations']:
+                # Simple chat format for training
+                formatted_text = ""
+                for turn in convo:
+                    role = turn['role']
+                    content = turn['content']
+                    formatted_text += f"<|im_start|>{role}\n{content}<|im_end|>\n"
+                texts.append(formatted_text)
+            return {'text': texts}
+
+        return dataset.map(formatting_func, batched=True)
+
+    # Apply formatting to all splits
+    formatted_datasets = {}
+    for split_name, split_data in datasets.items():
+        formatted_datasets[split_name] = format_dataset(split_data)
+
+    # Initialize model
+    logger.info("Initializing model...")
+    qwen_model = QwenPhishingModel(model_config)
+    qwen_model.load_model()
+    qwen_model.setup_lora()
+
+    # Setup trainer
+    logger.info("Setting up trainer...")
+    trainer = PhishingTrainer(
+        qwen_model.model,
+        qwen_model.tokenizer,
+        training_config
+    )
+    trainer.setup_trainer(
+        formatted_datasets['train'],
+        formatted_datasets.get('validation')
+    )
+
+    # Train
+    logger.info("Starting training...")
+    train_result = trainer.train(resume_from_checkpoint=args.resume)
+
+    # Evaluate
+    if 'test' in formatted_datasets:
+        logger.info("Evaluating on test set...")
+        eval_results = trainer.evaluate(formatted_datasets['test'])
+
+    # Save model
+    save_path = trainer.save_model()
+    logger.info(f"Model saved to {save_path}")
+
+    # Save GGUF if requested
+    if args.save_gguf:
+        qwen_model.save_gguf(save_path / "gguf", quantization_method="q4_k_m")
+
+    logger.info("Training complete!")
+
+def evaluate_model(args):
+    """Evaluate the trained model"""
+    logger = setup_logging(args.log_file)
+    logger.info("Starting evaluation")
+
+    # Load model
+    logger.info(f"Loading model from {args.model_path}")
+    qwen_model = QwenPhishingModel(inference_config)
+    qwen_model.load_model(args.model_path)
+
+    # Load test data
+    dataset_loader = PhishingDatasetLoader(data_config)
+
+    # Check if dataset exists
+    if not Path(data_config.dataset_path).exists():
+        logger.warning("Dataset not found, creating sample dataset...")
+        create_sample_dataset(data_config.dataset_path, num_samples=200)
+
+    base_df = dataset_loader.load_base_dataset()
+    _, _, test_df = dataset_loader.prepare_dataset_splits(base_df)
+
+    # Initialize detector
+    preprocessor = EmailPreprocessor()
+    detector = PhishingDetector(
+        qwen_model.model,
+        qwen_model.tokenizer,
+        preprocessor,
+        inference_config
+    )
+
+    # Run predictions
+    logger.info("Running predictions...")
+    predictions = []
+    y_true = []
+    y_pred = []
+
+    for idx, row in test_df.iterrows():
+        if idx >= 50:  # Limit for demo purposes
+            break
+
+        try:
+            result = detector.analyze_email(row['text'])
+            predictions.append(result)
+
+            y_true.append(row['label'])
+            y_pred.append(1 if result['classification'] == 'PHISHING' else 0)
+        except Exception as e:
+            logger.error(f"Failed to analyze email {idx}: {e}")
+
+    # Calculate metrics
+    metrics_calculator = PhishingMetrics()
+    metrics = metrics_calculator.calculate_metrics(
+        np.array(y_true),
+        np.array(y_pred)
+    )
+
+    # Print results
+    metrics_calculator.print_metrics(metrics, "Test Set Evaluation")
+
+    # Save results
+    if args.save_results:
+        output_path = Path(args.save_results)
+        output_path.mkdir(parents=True, exist_ok=True)
+        metrics_calculator.export_results(output_path / "metrics.csv")
+        metrics_calculator.plot_confusion_matrix(
+            metrics,
+            output_path / "confusion_matrix.png"
+        )
+
+    logger.info("Evaluation complete!")
+
+def run_inference_server(args):
+    """Run the inference server with SIEM integration"""
+    logger = setup_logging(args.log_file)
+    logger.info("Starting inference server")
+
+    # Load model
+    logger.info(f"Loading model from {args.model_path}")
+    qwen_model = QwenPhishingModel(inference_config)
+    qwen_model.load_model(args.model_path)
+
+    # Initialize components
+    preprocessor = EmailPreprocessor()
+    detector = PhishingDetector(
+        qwen_model.model,
+        qwen_model.tokenizer,
+        preprocessor,
+        inference_config
+    )
+
+    # Setup SIEM integration
+    siem = SIEMIntegration(detector, siem_config)
+
+    # Start API server
+    api = PhishingAPI(siem)
+    logger.info(f"Starting API server on {siem_config.api_host}:{siem_config.api_port}")
+    api.run()
+
+def analyze_single_email(args):
+    """Analyze a single email for testing"""
+    logger = setup_logging(args.log_file)
+
+    # Load model
+    logger.info(f"Loading model from {args.model_path}")
+    qwen_model = QwenPhishingModel(inference_config)
+    qwen_model.load_model(args.model_path)
+
+    # Initialize components
+    preprocessor = EmailPreprocessor()
+    detector = PhishingDetector(
+        qwen_model.model,
+        qwen_model.tokenizer,
+        preprocessor,
+        inference_config
+    )
+
+    # Analyze email
+    email_text = args.email_text
+    if args.email_file:
+        with open(args.email_file, 'r') as f:
+            email_text = f.read()
+
+    result = detector.analyze_email(email_text)
+
+    # Print results
+    print(f"\n{'='*60}")
+    print(f"EMAIL ANALYSIS RESULTS")
+    print(f"{'='*60}")
+    print(f"Classification: {result['classification']}")
+    print(f"Confidence: {result['confidence']:.3f}")
+    print(f"Risk Score: {result['risk_score']:.3f}")
+    print(f"Recommended Action: {result['recommended_action']}")
+    print(f"Processing Time: {result['processing_time']:.3f} seconds")
+
+    if result['risk_indicators']:
+        print(f"\nRisk Indicators:")
+        for indicator in result['risk_indicators']:
+            print(f"  - {indicator}")
+
+    if args.show_reasoning and result.get('reasoning'):
+        print(f"\nSecurity Analysis:")
+        print(result['reasoning'])
+
+    print(f"{'='*60}\n")
+
+def create_sample_data(args):
+    """Create sample dataset for testing"""
+    logger = setup_logging()
+    logger.info(f"Creating sample dataset with {args.num_samples} samples")
+
+    df = create_sample_dataset(args.output_path, args.num_samples)
+    logger.info(f"Sample dataset created at {args.output_path}")
+
+def main():
+    """Main entry point"""
+    parser = argparse.ArgumentParser(description="Phishing Detection with Reasoning Distillation")
+
+    subparsers = parser.add_subparsers(dest='command', help='Available commands')
+
+    # Training command
+    train_parser = subparsers.add_parser('train', help='Train the phishing detection model')
+    train_parser.add_argument('--generate-reasoning', action='store_true',
+                             help='Generate reasoning using teacher model')
+    train_parser.add_argument('--resume', action='store_true',
+                             help='Resume training from checkpoint')
+    train_parser.add_argument('--save-gguf', action='store_true',
+                             help='Save model in GGUF format')
+    train_parser.add_argument('--log-file', type=str,
+                             help='Log file path')
+
+    # Evaluation command
+    eval_parser = subparsers.add_parser('evaluate', help='Evaluate trained model')
+    eval_parser.add_argument('--model-path', type=str, required=True,
+                            help='Path to trained model')
+    eval_parser.add_argument('--save-results', type=str,
+                            help='Directory to save evaluation results')
+    eval_parser.add_argument('--log-file', type=str,
+                            help='Log file path')
+
+    # Server command
+    server_parser = subparsers.add_parser('server', help='Run inference server')
+    server_parser.add_argument('--model-path', type=str, required=True,
+                              help='Path to trained model')
+    server_parser.add_argument('--log-file', type=str,
+                              help='Log file path')
+
+    # Analyze command
+    analyze_parser = subparsers.add_parser('analyze', help='Analyze single email')
+    analyze_parser.add_argument('--model-path', type=str, required=True,
+                               help='Path to trained model')
+    analyze_parser.add_argument('--email-text', type=str,
+                               help='Email text to analyze')
+    analyze_parser.add_argument('--email-file', type=str,
+                               help='File containing email text')
+    analyze_parser.add_argument('--show-reasoning', action='store_true',
+                               help='Show detailed reasoning')
+    analyze_parser.add_argument('--log-file', type=str,
+                               help='Log file path')
+
+    # Create sample data command
+    sample_parser = subparsers.add_parser('create-sample', help='Create sample dataset')
+    sample_parser.add_argument('--output-path', type=str, required=True,
+                              help='Output path for sample dataset')
+    sample_parser.add_argument('--num-samples', type=int, default=1000,
+                              help='Number of samples to generate')
+
+    # Parse arguments
+    args = parser.parse_args()
+
+    if args.command == 'train':
+        train_model(args)
+    elif args.command == 'evaluate':
+        evaluate_model(args)
+    elif args.command == 'server':
+        run_inference_server(args)
+    elif args.command == 'analyze':
+        if not args.email_text and not args.email_file:
+            print("Error: Must provide either --email-text or --email-file")
+            sys.exit(1)
+        analyze_single_email(args)
+    elif args.command == 'create-sample':
+        create_sample_data(args)
+    else:
+        parser.print_help()
+
+if __name__ == "__main__":
+    main()
