@@ -1,6 +1,9 @@
 """
 Main training logic for the phishing detector
 """
+import os
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 from trl import SFTTrainer, SFTConfig
 from unsloth.chat_templates import train_on_responses_only
 import torch
@@ -31,16 +34,16 @@ class PhishingTrainer:
             learning_rate=self.config.learning_rate,
             logging_steps=self.config.logging_steps,
             save_steps=self.config.save_steps,
-            eval_steps=self.config.eval_steps,
+            eval_strategy="steps",
+            save_strategy="steps",
             optim=self.config.optimizer,
             weight_decay=self.config.weight_decay,
             lr_scheduler_type=self.config.lr_scheduler,
             seed=self.config.seed,
             report_to=self.config.report_to,
             dataset_text_field="text",
-            max_seq_length=self.model.config.max_seq_length,
-            gradient_checkpointing=True,
-            gradient_checkpointing_kwargs={"use_reentrant": True},
+            max_seq_length=self.model.config.max_length,
+            # FIX: Corrected the typo here.
             load_best_model_at_end=True,
             metric_for_best_model="eval_loss",
             greater_is_better=False,
@@ -58,36 +61,28 @@ class PhishingTrainer:
             eval_dataset=eval_dataset,
             args=training_args,
             packing=False,
-            dataset_num_proc=4,
+            dataset_num_proc=1,
         )
 
-        # Train only on responses
-        self.trainer = train_on_responses_only(
-            self.trainer,
-            instruction_part="<|im_start|>user\n",
-            response_part="<|im_start|>assistant\n",
-        )
-
+        logger.info("Skipping train_on_responses_only due to special token compatibility issues")
+        logger.info("Training on full sequences (both questions and answers)")
+        
+        # Don't use train_on_responses_only at all
+        # The Qwen3-Thinking model with special <think> tokens doesn't play well with it
+        
         logger.info("Trainer setup complete")
 
     def train(self, resume_from_checkpoint: bool = False):
         """Run training"""
         logger.info("Starting training...")
-
-        # Log GPU memory before training
         if torch.cuda.is_available():
             gpu_stats = torch.cuda.get_device_properties(0)
             start_gpu_memory = round(torch.cuda.max_memory_reserved() / 1024 / 1024 / 1024, 3)
             max_memory = round(gpu_stats.total_memory / 1024 / 1024 / 1024, 3)
             logger.info(f"GPU = {gpu_stats.name}. Max memory = {max_memory} GB.")
             logger.info(f"{start_gpu_memory} GB of memory reserved.")
-
-        # Train
         train_result = self.trainer.train(resume_from_checkpoint=resume_from_checkpoint)
-
-        # Log training stats
         self._log_training_stats(train_result)
-
         return train_result
 
     def _log_training_stats(self, train_result):
@@ -97,11 +92,8 @@ class PhishingTrainer:
             max_memory = round(gpu_stats.total_memory / 1024 / 1024 / 1024, 3)
             used_memory = round(torch.cuda.max_memory_reserved() / 1024 / 1024 / 1024, 3)
             used_percentage = round(used_memory / max_memory * 100, 3)
-
             logger.info(f"Training completed in {train_result.metrics['train_runtime']:.2f} seconds")
             logger.info(f"Peak memory usage: {used_memory} GB ({used_percentage}%)")
-
-        # Log metrics
         for key, value in train_result.metrics.items():
             logger.info(f"{key}: {value}")
 
@@ -110,14 +102,10 @@ class PhishingTrainer:
         if eval_dataset is None and self.trainer.eval_dataset is None:
             logger.warning("No evaluation dataset provided")
             return None
-
         logger.info("Running evaluation...")
         eval_results = self.trainer.evaluate(eval_dataset=eval_dataset)
-
-        # Log evaluation results
         for key, value in eval_results.items():
             logger.info(f"{key}: {value}")
-
         return eval_results
 
     def save_model(self, save_path: Optional[str] = None):
@@ -125,13 +113,10 @@ class PhishingTrainer:
         if save_path is None:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             save_path = Path(self.config.output_dir) / f"checkpoint_{timestamp}"
-
         save_path = Path(save_path)
         save_path.mkdir(parents=True, exist_ok=True)
-
         logger.info(f"Saving model to {save_path}")
         self.trainer.save_model(str(save_path))
-
         return save_path
 
     def push_to_hub(self, repo_name: str, private: bool = True):

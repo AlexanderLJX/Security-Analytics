@@ -12,7 +12,7 @@ load_dotenv()
 class ModelConfig:
     """Model configuration parameters"""
     # Model selection
-    teacher_model: str = "gpt-4-turbo-preview"  # or "claude-3-opus", "gpt-4"
+    teacher_model: str = "gpt-5"
     student_model: str = "unsloth/Qwen3-4B-Thinking-2507"
 
     # Model parameters
@@ -26,8 +26,8 @@ class ModelConfig:
     lora_dropout: float = 0.0
     lora_target_modules: list = None
 
-    # Device configuration
-    device: str = "cuda"
+    # CHANGE: Set device to "auto" to use GPU when available. "cpu" is too slow for training.
+    device: str = "auto"
     seed: int = 3407
 
     def __post_init__(self):
@@ -58,8 +58,8 @@ class TrainingConfig:
     eval_steps: int = 50
     logging_steps: int = 10
 
-    # Hardware
-    device: str = "cuda"
+    # CHANGE: Set device to "auto"
+    device: str = "auto"
     seed: int = 3407
 
     # Tracking
@@ -70,7 +70,7 @@ class TrainingConfig:
 class DataConfig:
     """Data configuration parameters"""
     # Datasets
-    dataset_path: str = "./combined-datasetwithoutemptys.parquet"
+    dataset_path: str = "./combined-dataset-with-reasoning-fast.parquet"
     reasoning_cache_path: str = "./data/reasoning_cache.json"
 
     # Data splits
@@ -95,6 +95,7 @@ class ReasoningConfig:
     # API settings
     api_provider: str = "openai"  # or "anthropic"
     api_key: str = os.getenv("OPENAI_API_KEY")
+    teacher_model: str = "gpt-5"
 
     # Generation parameters
     temperature: float = 0.3
@@ -109,6 +110,9 @@ class ReasoningConfig:
     # Batch processing
     batch_size: int = 10
     save_frequency: int = 50
+
+    # Cache settings
+    reasoning_cache_path: str = "./reasoning_cache_fast.json"
 
 @dataclass
 class InferenceConfig:
@@ -128,8 +132,8 @@ class InferenceConfig:
     batch_size: int = 8
     max_concurrent_requests: int = 100
 
-    # Device configuration
-    device: str = "cuda"
+    # CHANGE: Set device to "auto" for efficient inference on GPU.
+    device: str = "auto"
     max_seq_length: int = 4096
 
 @dataclass

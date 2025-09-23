@@ -6,7 +6,14 @@
       "Bash(.venv/Scripts/pip install:*)",
       "Bash(source:*)",
       "Bash(python:*)",
-      "Bash(uv pip install:*)"
+      "Bash(uv pip install:*)",
+      "Bash(find:*)",
+      "Bash(.venvScriptspython.exe:*)",
+      "Bash(uv run:*)",
+      "Bash(uv pip uninstall:*)",
+      "Bash(nvidia-smi:*)",
+      "Bash(uv pip:*)",
+      "Bash(findstr:*)"
     ],
     "deny": [],
     "ask": []

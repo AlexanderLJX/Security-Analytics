@@ -1,9 +1,9 @@
 [project]
 name = "phishing-detector"
 version = "1.0.0"
-description = "Phishing email detection system with reasoning distillation using GPT-4/Claude and Qwen models"
+description = "Phishing email detection system with reasoning distillation using GPT-5 and Qwen models"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 authors = [
     {name = "Security Analytics Team", email = "security@example.com"}
 ]
@@ -14,7 +14,6 @@ classifiers = [
     "Intended Audience :: Information Technology",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Topic :: Security",
@@ -83,6 +82,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.version]
 path = "config.py"
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["data", "models", "training", "evaluation", "inference", "utils"]

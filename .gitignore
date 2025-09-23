@@ -208,3 +208,6 @@ reasoning_dataset.*
 # Test artifacts
 test_results/
 test_outputs/
+/unsloth_compiled_cache
+uv.lock
+uv.lock

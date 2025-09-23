@@ -197,19 +197,31 @@ ALERT_THRESHOLD=0.7
 
 def check_dependencies():
     """Check if required dependencies are installed"""
-    required_packages = [
-        'torch', 'transformers', 'unsloth', 'trl', 'datasets',
-        'openai', 'anthropic', 'pandas', 'numpy', 'scikit-learn',
-        'matplotlib', 'seaborn', 'kafka-python', 'flask'
-    ]
+    # Map package names to their import names
+    package_imports = {
+        'torch': 'torch',
+        'transformers': 'transformers',
+        'unsloth': 'unsloth',
+        'trl': 'trl',
+        'datasets': 'datasets',
+        'openai': 'openai',
+        'anthropic': 'anthropic',
+        'pandas': 'pandas',
+        'numpy': 'numpy',
+        'scikit-learn': 'sklearn',
+        'matplotlib': 'matplotlib',
+        'seaborn': 'seaborn',
+        'kafka-python': 'kafka',
+        'flask': 'flask'
+    }
 
     missing_packages = []
 
-    for package in required_packages:
+    for package_name, import_name in package_imports.items():
         try:
-            __import__(package)
+            __import__(import_name)
         except ImportError:
-            missing_packages.append(package)
+            missing_packages.append(package_name)
 
     if missing_packages:
         print("Missing required packages:")

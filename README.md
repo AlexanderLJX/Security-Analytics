@@ -1,10 +1,10 @@
 # Phishing Detection with Reasoning Distillation
 
-A comprehensive phishing email detection system using reasoning distillation from large language models (GPT-4/Claude) to fine-tune a smaller Qwen model for production deployment.
+A comprehensive phishing email detection system using reasoning distillation from large language models (GPT-5) to fine-tune a smaller Qwen model for production deployment.
 
 ## Features
 
-- **Reasoning Distillation**: Uses GPT-4/Claude as teacher models to generate detailed security reasoning
+- **Reasoning Distillation**: Uses GPT-5 as teacher models to generate detailed security reasoning
 - **Production-Ready**: Optimized Qwen model for fast inference
 - **SIEM Integration**: Kafka-based alerting and Flask API for security operations
 - **Comprehensive Evaluation**: Detailed metrics and visualizations
@@ -22,7 +22,7 @@ phishing_detector/
 │   └── preprocessor.py        # Email preprocessing and features
 ├── models/                    # Model implementations
 │   ├── qwen_model.py          # Qwen student model
-│   └── teacher_model.py       # GPT-4/Claude teacher model
+│   └── teacher_model.py       # GPT-5 teacher model
 ├── training/                  # Training pipeline
 │   ├── trainer.py             # Model training logic
 │   └── reasoning_distillation.py # Reasoning generation
@@ -98,12 +98,12 @@ Edit `config.py` or use environment variables:
 
 ### Model Configuration
 - `student_model`: Qwen model to fine-tune
-- `teacher_model`: GPT-4/Claude model for reasoning
+- `teacher_model`: GPT-5 model for reasoning
 - `max_seq_length`: Maximum sequence length
 - `lora_r`: LoRA rank for efficient fine-tuning
 
 ### API Configuration
-- `OPENAI_API_KEY`: OpenAI API key for GPT-4
+- `OPENAI_API_KEY`: OpenAI API key for GPT-5
 - `ANTHROPIC_API_KEY`: Anthropic API key for Claude
 - `api_provider`: "openai" or "anthropic"
 
