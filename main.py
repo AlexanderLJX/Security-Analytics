@@ -343,7 +343,10 @@ def export_merged_model(args):
     qwen_model.load_model(args.model_path)
 
     # Export in specified format
-    qwen_model.export_merged_model(args.output_path, args.format)
+    if args.format == "gguf":
+        qwen_model.export_merged_gguf(args.output_path, args.quantization)
+    else:
+        qwen_model.export_merged_model(args.output_path, args.format)
 
     logger.info("Model export completed successfully!")
     print(f"Merged model exported to: {args.output_path}")
@@ -392,6 +395,9 @@ def main():
     export_parser.add_argument('--format', type=str, default='merged_16bit',
                               choices=['merged_16bit', 'merged_4bit', 'merged_4bit_forced', 'gguf'],
                               help='Export format')
+    export_parser.add_argument('--quantization', type=str, default='q4_k_m',
+                              choices=['q2_k', 'q3_k_s', 'q3_k_m', 'q3_k_l', 'q4_0', 'q4_1', 'q4_k_s', 'q4_k_m', 'q5_0', 'q5_1', 'q5_k_s', 'q5_k_m', 'q6_k', 'q8_0'],
+                              help='GGUF quantization method (only applies when format=gguf)')
     export_parser.add_argument('--log-file', type=str, help='Log file path')
 
     # Create sample data command
