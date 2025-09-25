@@ -270,27 +270,39 @@ def analyze_single_email(args):
     """Analyze a single email for testing"""
     logger = setup_logging(args.log_file)
 
+    # Override device if specified
+    if args.device:
+        inference_config.device = args.device
+
     # Load model
-    logger.info(f"Loading model from {args.model_path}")
+    if args.model_path:
+        logger.info(f"Loading model from {args.model_path}")
+    else:
+        logger.info("Loading base model (no checkpoint specified)")
+    logger.info(f"Using device: {inference_config.device}")
     qwen_model = QwenPhishingModel(inference_config)
     qwen_model.load_model(args.model_path)
 
-    # Initialize components
-    preprocessor = EmailPreprocessor()
-    detector = PhishingDetector(
-        qwen_model.model,
-        qwen_model.tokenizer,
-        preprocessor,
-        inference_config
-    )
-
-    # Analyze email
+    # Get email text
     email_text = args.email_text
     if args.email_file:
         with open(args.email_file, 'r') as f:
             email_text = f.read()
 
-    result = detector.analyze_email(email_text)
+    # Analyze email
+    if qwen_model.is_gguf:
+        # For GGUF models, use the QwenPhishingModel directly
+        result = qwen_model.analyze_email(email_text)
+    else:
+        # For HuggingFace models, use the detector
+        preprocessor = EmailPreprocessor()
+        detector = PhishingDetector(
+            qwen_model.model,
+            qwen_model.tokenizer,
+            preprocessor,
+            inference_config
+        )
+        result = detector.analyze_email(email_text)
 
     # Print results
     print(f"\n{'='*60}\nEMAIL ANALYSIS RESULTS\n{'='*60}")
@@ -319,6 +331,29 @@ def create_sample_data(args):
     df = create_sample_dataset(args.output_path, args.num_samples)
     logger.info(f"Sample dataset created at {args.output_path}")
 
+def export_merged_model(args):
+    """Export merged LoRA model in various formats"""
+    logger = setup_logging(args.log_file)
+
+    logger.info(f"Exporting merged model from checkpoint: {args.model_path}")
+    logger.info(f"Output path: {args.output_path}")
+    logger.info(f"Export format: {args.format}")
+
+    # Load model with LoRA
+    qwen_model = QwenPhishingModel(inference_config)
+    qwen_model.load_model(args.model_path)
+
+    # Export in specified format
+    qwen_model.export_merged_model(args.output_path, args.format)
+
+    logger.info("Model export completed successfully!")
+    print(f"Merged model exported to: {args.output_path}")
+
+    if args.format == "gguf":
+        print("You can now use this GGUF file in LMStudio or other llama.cpp applications.")
+    else:
+        print("You can load this merged model with standard HuggingFace transformers.")
+
 def main():
     """Main entry point"""
     parser = argparse.ArgumentParser(description="Phishing Detection with Reasoning Distillation")
@@ -344,11 +379,21 @@ def main():
 
     # Analyze command
     analyze_parser = subparsers.add_parser('analyze', help='Analyze single email')
-    analyze_parser.add_argument('--model-path', type=str, required=True, help='Path to trained model')
+    analyze_parser.add_argument('--model-path', type=str, help='Path to trained model (optional, uses base model if not provided)')
     analyze_parser.add_argument('--email-text', type=str, help='Email text to analyze')
     analyze_parser.add_argument('--email-file', type=str, help='File containing email text')
     analyze_parser.add_argument('--show-reasoning', action='store_true', help='Show detailed reasoning')
+    analyze_parser.add_argument('--device', type=str, choices=['auto', 'cpu', 'cuda'], help='Device for inference')
     analyze_parser.add_argument('--log-file', type=str, help='Log file path')
+
+    # Export merged model command
+    export_parser = subparsers.add_parser('export', help='Export merged model in various formats')
+    export_parser.add_argument('--model-path', type=str, required=True, help='Path to LoRA checkpoint')
+    export_parser.add_argument('--output-path', type=str, required=True, help='Output path for merged model')
+    export_parser.add_argument('--format', type=str, default='merged_16bit',
+                              choices=['merged_16bit', 'merged_4bit', 'merged_4bit_forced', 'gguf'],
+                              help='Export format')
+    export_parser.add_argument('--log-file', type=str, help='Log file path')
 
     # Create sample data command
     sample_parser = subparsers.add_parser('create-sample', help='Create sample dataset')
@@ -370,6 +415,8 @@ def main():
         analyze_single_email(args)
     elif args.command == 'create-sample':
         create_sample_data(args)
+    elif args.command == 'export':
+        export_merged_model(args)
     else:
         parser.print_help()
 

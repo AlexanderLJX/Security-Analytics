@@ -21,6 +21,9 @@ class PhishingDetector:
         # Put model in eval mode
         self.model.eval()
 
+        # Resolve actual device from "auto"
+        self.device = self._resolve_device(config.device)
+
     def analyze_email(self,
                      email_text: str,
                      return_reasoning: bool = True,
@@ -80,7 +83,7 @@ class PhishingDetector:
             return_tensors="pt",
             truncation=True,
             max_length=self.config.max_seq_length
-        ).to(self.config.device)
+        ).to(self.device)
 
         # Generate
         with torch.no_grad():
@@ -95,14 +98,10 @@ class PhishingDetector:
                 eos_token_id=self.tokenizer.eos_token_id,
             )
 
-        # Decode
-        response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+        # Decode only the newly generated tokens
+        response = self.tokenizer.decode(outputs[0][len(inputs['input_ids'][0]):], skip_special_tokens=True)
 
-        # Extract generated part
-        if prompt in response:
-            response = response[len(prompt):].strip()
-
-        return response
+        return response.strip()
 
     def _parse_response(self, response: str, features: Optional[Dict] = None) -> Dict[str, Any]:
         """Parse model response into structured output"""
@@ -265,3 +264,12 @@ class PhishingDetector:
                     })
 
         return results
+
+    def _resolve_device(self, device_config: str) -> str:
+        """Resolve device configuration to actual device"""
+        if device_config == "auto":
+            if torch.cuda.is_available():
+                return "cuda"
+            else:
+                return "cpu"
+        return device_config

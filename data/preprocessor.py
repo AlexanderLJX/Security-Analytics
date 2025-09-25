@@ -155,9 +155,6 @@ class EmailPreprocessor:
             'num_attachments': len(parsed['attachments']),
             'suspicious_attachments': self._check_suspicious_attachments(parsed['attachments']),
 
-            # Headers
-            'spf_pass': self._check_spf(parsed['headers']),
-            'dkim_pass': self._check_dkim(parsed['headers'])
         }
 
         return features
@@ -239,15 +236,6 @@ class EmailPreprocessor:
                 return True
         return False
 
-    def _check_spf(self, headers: Dict) -> bool:
-        """Check SPF authentication (simplified)"""
-        auth_results = headers.get('Authentication-Results', '')
-        return 'spf=pass' in auth_results.lower()
-
-    def _check_dkim(self, headers: Dict) -> bool:
-        """Check DKIM authentication (simplified)"""
-        auth_results = headers.get('Authentication-Results', '')
-        return 'dkim=pass' in auth_results.lower()
 
     def create_enhanced_prompt(self, email_text: str, features: Dict) -> str:
         """Create enhanced prompt with extracted features for LLM"""
@@ -264,8 +252,6 @@ Security Features Detected:
 - Has Shortened URLs: {features['has_shortened_url']}
 - Has Attachments: {features['has_attachments']}
 - Suspicious Sender: {features['has_suspicious_sender']}
-- SPF Pass: {features['spf_pass']}
-- DKIM Pass: {features['dkim_pass']}
 
 Provide detailed security analysis and classification."""
 

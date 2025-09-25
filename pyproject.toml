@@ -47,6 +47,7 @@ dependencies = [
     "tqdm>=4.66.0",
     "colorama>=0.4.6",
     "tenacity>=8.0.0",
+    "llama-cpp-python>=0.3.16",
 ]
 
 [project.optional-dependencies]

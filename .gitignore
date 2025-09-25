@@ -211,3 +211,5 @@ test_outputs/
 /unsloth_compiled_cache
 uv.lock
 uv.lock
+/phishing-detector-merged
+/phishing-detector-merged.gguf

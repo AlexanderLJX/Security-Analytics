@@ -120,9 +120,14 @@ class InferenceConfig:
     # Model settings
     model_path: str = "./checkpoints/phishing_detector/best"
     use_quantization: bool = True
+    student_model: str = "unsloth/Qwen3-4B-Thinking-2507"
+
+    # Model loading parameters (needed for Qwen model)
+    load_in_4bit: bool = True
+    load_in_8bit: bool = False
 
     # Inference parameters
-    max_new_tokens: int = 500
+    max_new_tokens: int = 2000
     temperature: float = 0.3
     top_p: float = 0.9
     top_k: int = 20
@@ -132,7 +137,7 @@ class InferenceConfig:
     batch_size: int = 8
     max_concurrent_requests: int = 100
 
-    # CHANGE: Set device to "auto" for efficient inference on GPU.
+    # Device: "auto" for GPU, "cpu" for CPU inference
     device: str = "auto"
     max_seq_length: int = 4096
 
