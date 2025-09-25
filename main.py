@@ -17,7 +17,7 @@ from config import (
 
 # Import modules
 from data.dataset_loader import PhishingDatasetLoader
-from data.preprocessor import EmailPreprocessor
+# from data.preprocessor import EmailPreprocessor  # No longer needed
 from models.qwen_model import QwenPhishingModel
 from models.teacher_model import TeacherModel
 from training.trainer import PhishingTrainer
@@ -295,11 +295,10 @@ def analyze_single_email(args):
         result = qwen_model.analyze_email(email_text)
     else:
         # For HuggingFace models, use the detector
-        preprocessor = EmailPreprocessor()
         detector = PhishingDetector(
             qwen_model.model,
             qwen_model.tokenizer,
-            preprocessor,
+            None,  # No preprocessor needed anymore
             inference_config
         )
         result = detector.analyze_email(email_text)

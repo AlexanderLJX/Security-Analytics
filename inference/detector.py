@@ -26,22 +26,13 @@ class PhishingDetector:
 
     def analyze_email(self,
                      email_text: str,
-                     return_reasoning: bool = True,
-                     extract_features: bool = True) -> Dict[str, Any]:
+                     return_reasoning: bool = True) -> Dict[str, Any]:
         """Analyze email for phishing with detailed output"""
 
         start_time = time.time()
 
-        # Extract features if requested
-        features = None
-        if extract_features:
-            features = self.preprocessor.extract_features(email_text)
-
-        # Create prompt
-        if features:
-            prompt = self.preprocessor.create_enhanced_prompt(email_text, features)
-        else:
-            prompt = f"Analyze this email for phishing indicators and provide detailed security reasoning:\n\n{email_text}"
+        # Simple prompt - let the LLM do the feature extraction
+        prompt = f"Analyze this email for phishing indicators and provide detailed security reasoning:\n\n{email_text}"
 
         # Create conversation format
         messages = [
@@ -60,7 +51,7 @@ class PhishingDetector:
         response = self._generate(formatted_prompt)
 
         # Parse response
-        result = self._parse_response(response, features)
+        result = self._parse_response(response, features=None)
 
         # Add timing
         result['processing_time'] = time.time() - start_time
