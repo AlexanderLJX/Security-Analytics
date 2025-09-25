@@ -213,3 +213,4 @@ uv.lock
 uv.lock
 /phishing-detector-merged
 /phishing-detector-merged.gguf
+/llama.cpp
