@@ -1,14 +1,16 @@
 # Phishing Detection with Reasoning Distillation
 
-A comprehensive phishing email detection system using reasoning distillation from large language models (GPT-5) to fine-tune a smaller Qwen model for production deployment.
+A comprehensive phishing email detection system using reasoning distillation from large language models (GPT-5) to fine-tune a smaller Qwen model for production deployment. Features structured JSON output, GGUF quantization for CPU inference, and enterprise SIEM integration.
 
 ## Features
 
-- **Reasoning Distillation**: Uses GPT-5 as teacher models to generate detailed security reasoning
-- **Production-Ready**: Optimized Qwen model for fast inference
-- **SIEM Integration**: Kafka-based alerting and Flask API for security operations
-- **Comprehensive Evaluation**: Detailed metrics and visualizations
-- **Feature Extraction**: Advanced email preprocessing and security feature detection
+- **Reasoning Distillation**: Uses GPT-5 as teacher model to generate detailed security reasoning
+- **Production-Ready**: Optimized Qwen model with LoRA fine-tuning for fast inference
+- **Multiple Inference Formats**: HuggingFace transformers, GGUF quantized models for CPU
+- **Structured Output**: Reliable JSON format with confidence scores and risk indicators
+- **SIEM Integration**: Kafka, Splunk HEC, and REST API for security operations
+- **Comprehensive Evaluation**: Detailed metrics and performance analysis
+- **Quantization Support**: Q2_K to Q8_0 quantization levels for different deployment needs
 
 ## Project Structure
 
@@ -40,12 +42,16 @@ phishing_detector/
 ### 1. Installation
 
 ```bash
+# Create and activate virtual environment (using UV)
+uv venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
 # Install dependencies
-pip install -r requirements.txt
+uv pip install -r requirements.txt
 
 # Create environment file
 cp .env.template .env
-# Edit .env with your API keys
+# Edit .env with your API keys (OPENAI_API_KEY, SPLUNK_TOKEN, etc.)
 ```
 
 ### 2. Create Sample Dataset
@@ -85,11 +91,28 @@ python main.py server --model-path ./checkpoints/phishing_detector/best
 ### 6. Analyze Single Email
 
 ```bash
-# From command line
-python main.py analyze --model-path ./checkpoints/phishing_detector/best --email-text "URGENT: Your account will be suspended!"
+# Using HuggingFace model (GPU/CPU)
+python main.py analyze --model-path ./checkpoints/phishing_detector/best --email-text "URGENT: Your account will be suspended!" --show-reasoning
 
-# From file
-python main.py analyze --model-path ./checkpoints/phishing_detector/best --email-file ./test_email.txt --show-reasoning
+# Using GGUF model for CPU inference
+python main.py analyze --model-path ./models/qwen_q4km/model-unsloth.Q4_K_M.gguf --email-file ./test_email.txt --device cpu --show-reasoning
+
+# Test base model without fine-tuning
+python main.py analyze --email-text "Test email content" --device cpu --show-reasoning
+```
+
+### 7. Export Models
+
+```bash
+# Export LoRA checkpoint to merged HuggingFace format
+python main.py export --model-path ./checkpoints/phishing_detector/best --output-path ./models/merged --format merged_16bit
+
+# Export to GGUF for CPU inference (various quantization levels)
+python main.py export --model-path ./checkpoints/phishing_detector/best --output-path ./models/qwen_q4km --format gguf --quantization q4_k_m
+
+# Smaller quantized models
+python main.py export --model-path ./checkpoints/phishing_detector/best --output-path ./models/qwen_q3km --format gguf --quantization q3_k_m
+python main.py export --model-path ./checkpoints/phishing_detector/best --output-path ./models/qwen_q2k --format gguf --quantization q2_k
 ```
 
 ## Configuration
@@ -115,6 +138,9 @@ Edit `config.py` or use environment variables:
 ### SIEM Configuration
 - `KAFKA_BROKER`: Kafka broker for alerts
 - `kafka_topic`: Topic for security alerts
+- `SPLUNK_HEC_URL`: Splunk HTTP Event Collector URL
+- `SPLUNK_TOKEN`: Splunk HEC authentication token
+- `SPLUNK_INDEX`: Splunk index for security events
 - `alert_threshold`: Risk score threshold for alerts
 
 ## API Usage
@@ -138,52 +164,96 @@ curl -X POST http://localhost:5000/batch \
   -d '{"emails": ["Email 1 text", "Email 2 text"]}'
 ```
 
-## Security Features
+## Analysis Capabilities
 
-The system analyzes emails for:
+The system uses advanced LLM reasoning to analyze emails for:
 
-- **Sender Authentication**: SPF, DKIM, domain spoofing
-- **URL Analysis**: Suspicious links, shorteners, redirects
-- **Social Engineering**: Urgency, fear appeals, authority abuse
-- **Technical Indicators**: Grammar errors, formatting issues
-- **Content Analysis**: Credential requests, attachments
-- **Behavioral Patterns**: Deviation from normal communication
+- **Social Engineering**: Urgency tactics, authority impersonation, psychological manipulation
+- **URL Analysis**: Suspicious domains, shortened links, phishing redirects
+- **Sender Authentication**: Domain spoofing, Gmail impersonation of businesses
+- **Information Harvesting**: PII requests, credential phishing, ID document requests
+- **Financial Fraud**: Payment requests, fee scams, fake refunds
+- **Content Analysis**: Grammar patterns, suspicious attachments, generic greetings
+- **Behavioral Patterns**: Deviation from legitimate business communication
 
 ## Example Output
 
+### Structured JSON Response
 ```json
 {
   "classification": "PHISHING",
   "confidence": 0.95,
-  "risk_score": 0.87,
+  "risk_score": 1.0,
   "recommended_action": "BLOCK",
   "risk_indicators": [
-    "urgency",
-    "credential_request",
-    "suspicious_url"
+    "Suspicious email address (gmail domain)",
+    "Request for sensitive information (ID scan)",
+    "Urgent action required (48 hours)",
+    "Fake airport agent claim",
+    "Payment request for non-existent inspection fee"
   ],
-  "reasoning": "This email exhibits multiple phishing indicators including urgent language, credential harvesting attempts, and suspicious URLs...",
-  "processing_time": 0.234
+  "reasoning": "Email uses a fake Gmail address for an airport agent, requests sensitive ID scans, and creates urgency with a 48-hour deadline for an abandoned package. Classic phishing scam designed to steal personal information and funds through fake urgency and impersonation.",
+  "processing_time": 133.514
 }
 ```
 
+### Model Performance
+- **Processing Time**: 2-3 minutes CPU (GGUF Q4_K_M), 30-60 seconds GPU
+- **Accuracy**: 95%+ confidence on clear phishing attempts
+- **Model Size**: 2.5GB (Q2_K) to 8GB (Q8_0) quantized versions
+- **Inference**: Supports both thinking mode (better quality) and direct output
+
 ## SIEM Integration
 
-Alerts are sent to Kafka in MITRE ATT&CK format:
+### Supported Platforms
+- **Kafka**: Real-time streaming alerts
+- **Splunk**: HTTP Event Collector with structured indexing
+- **REST API**: For custom integrations
 
+### Splunk Event Format
 ```json
 {
-  "alert_id": "PHISH_20240101120000_abc12345",
-  "severity": "HIGH",
-  "event_type": "EMAIL_SECURITY",
-  "mitre_attack": {
-    "technique": "T1566",
-    "name": "Phishing",
-    "tactic": "Initial Access"
-  },
-  "risk_score": 0.87,
-  "recommended_action": "BLOCK"
+  "timestamp": "2025-09-25T20:04:03.354Z",
+  "source": "phishing-detector-ai",
+  "sourcetype": "phishing_detection",
+  "host": "phishing-ai-worker-01",
+  "index": "security",
+  "event": {
+    "alert_id": "phish-20250925-200403-001",
+    "severity": "high",
+    "email": {
+      "sender": "inquiry.officeoo12@gmail.com",
+      "subject": "Re: Your Package for Delivery"
+    },
+    "detection": {
+      "classification": "PHISHING",
+      "confidence": 0.95,
+      "risk_score": 1.0,
+      "recommended_action": "BLOCK"
+    },
+    "mitre_attack": {
+      "tactics": ["T1566", "T1204"],
+      "techniques": ["T1566.002", "T1204.002"]
+    },
+    "actions_taken": {
+      "email_quarantined": true,
+      "sender_blocked": true,
+      "soc_alerted": true
+    }
+  }
 }
+```
+
+### Splunk Searches
+```splunk
+# High-risk phishing attempts
+index=security sourcetype=phishing_detection detection.risk_score>0.8
+
+# Monitor blocked senders
+index=security sourcetype=phishing_detection actions_taken.sender_blocked=true
+
+# Track social engineering campaigns
+index=security sourcetype=phishing_detection analysis.threat_indicators.social_engineering_tactics="urgency"
 ```
 
 ## Advanced Usage
