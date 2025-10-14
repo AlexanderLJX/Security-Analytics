@@ -148,7 +148,6 @@ data/*.json
 data/*.parquet
 logs/
 *.log
-models/
 cache/
 temp/
 tmp/
