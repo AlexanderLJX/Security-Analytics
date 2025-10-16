@@ -18,6 +18,7 @@ from config import (
 # Import modules
 from data.dataset_loader import PhishingDatasetLoader
 # from data.preprocessor import EmailPreprocessor  # No longer needed
+from data.preprocessor import EmailPreprocessor
 from models.qwen_model import QwenPhishingModel
 from models.teacher_model import TeacherModel
 from training.trainer import PhishingTrainer
@@ -253,13 +254,17 @@ def run_inference_server(args):
     qwen_model.load_model(args.model_path)
 
     # Initialize components
-    preprocessor = EmailPreprocessor()
-    detector = PhishingDetector(
-        qwen_model.model,
-        qwen_model.tokenizer,
-        preprocessor,
-        inference_config
-    )
+    if qwen_model.is_gguf:
+        logger.info("GGUF model detected; using llama.cpp inference pipeline")
+        detector = qwen_model  # Provides analyze_email for SIEM integration
+    else:
+        preprocessor = EmailPreprocessor()
+        detector = PhishingDetector(
+            qwen_model.model,
+            qwen_model.tokenizer,
+            preprocessor,
+            inference_config
+        )
 
     siem = SIEMIntegration(detector, siem_config)
     api = PhishingAPI(siem)
