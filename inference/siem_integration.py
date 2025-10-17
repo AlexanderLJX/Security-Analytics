@@ -5,7 +5,7 @@ import json
 import hashlib
 import socket
 import random
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any
 from kafka import KafkaProducer
 from flask import Flask, request, jsonify
@@ -248,7 +248,7 @@ class SIEMIntegration:
                     key=alert['alert_id'].encode('utf-8')
                 )
 
-                # Wait for confirmation
+                # Wait for confirmation 
                 result = future.get(timeout=10)
                 logger.info(f"Alert sent to Kafka: {alert['alert_id']}")
 
@@ -266,10 +266,21 @@ class SIEMIntegration:
                     'Authorization': f'Splunk {self.config.splunk_token}',
                     'Content-Type': 'application/json'
                 }
-
+                # Format for Splunk HEC
+                # Convert ISO8601 timestamp to epoch seconds; fall back to current time.
+                ts = alert.get("timestamp")
+                try:
+                    if isinstance(ts, (int, float)):
+                        epoch_time = float(ts)
+                    elif isinstance(ts, str):
+                        epoch_time = datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+                    else:
+                        epoch_time = datetime.now(tz=timezone.utc).timestamp()
+                except Exception:
+                    epoch_time = datetime.now(tz=timezone.utc).timestamp()
                 # Format for Splunk HEC
                 splunk_event = {
-                    'time': alert.get('timestamp'),
+                    "time": epoch_time,
                     'host': alert.get('host'),
                     'source': alert.get('source'),
                     'sourcetype': alert.get('sourcetype'),
@@ -281,7 +292,8 @@ class SIEMIntegration:
                     self.config.splunk_hec_url,
                     json=splunk_event,
                     headers=headers,
-                    timeout=10
+                    timeout=10, 
+                    verify=False
                 )
 
                 if response.status_code == 200:
@@ -338,7 +350,7 @@ class PhishingAPI:
             return jsonify({
                 'status': 'healthy',
                 'timestamp': datetime.now().isoformat(),
-                'stats': self.siem.get_stats()
+                'stats': self.siem.get_stats()  
             })
 
         @self.app.route('/analyze', methods=['POST'])
