@@ -14,6 +14,7 @@ from concurrent.futures import ThreadPoolExecutor
 import queue
 import threading
 import requests
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,7 @@ class SIEMIntegration:
             'index': 'security',
 
             'event': {
+                
                 'event_type': 'email_analysis',
                 'category': 'phishing_attempt' if analysis_result.get('classification') == 'PHISHING' else 'email_analysis',
                 'severity': self._determine_severity(analysis_result),
@@ -91,7 +93,8 @@ class SIEMIntegration:
                     'recipient': email_metadata.get('recipient', 'unknown'),
                     'message_id': email_metadata.get('message_id', f"hash-{email_hash[:16]}"),
                     'size_bytes': len(email_text),
-                    'hash': email_hash
+                    'hash': email_hash,
+                    'body': email_text
                 },
 
                 # Detection results
@@ -122,6 +125,9 @@ class SIEMIntegration:
             }
         }
 
+        # Preserve alert identifier inside the event payload for downstream systems like Splunk.
+        alert['event']['alert_id'] = alert['alert_id']
+
         # Add MITRE ATT&CK mappings if phishing detected
         if analysis_result.get('classification') == 'PHISHING':
             alert['event']['mitre_attack'] = {
@@ -147,17 +153,17 @@ class SIEMIntegration:
         }
 
         # Try to extract sender
-        from_match = re.search(r'From:\s*([^\r\n]+)', email_text, re.IGNORECASE)
+        from_match = re.search(r'^\s*From\s*:\s*([^\r\n]+)', email_text, re.IGNORECASE | re.MULTILINE)
         if from_match:
             metadata['sender'] = from_match.group(1).strip()
 
         # Try to extract subject
-        subject_match = re.search(r'Subject:\s*([^\r\n]+)', email_text, re.IGNORECASE)
+        subject_match = re.search(r'^\s*Subject\s*:\s*([^\r\n]+)', email_text, re.IGNORECASE | re.MULTILINE)
         if subject_match:
             metadata['subject'] = subject_match.group(1).strip()
 
         # Try to extract recipient
-        to_match = re.search(r'To:\s*([^\r\n]+)', email_text, re.IGNORECASE)
+        to_match = re.search(r'^\s*To\s*:\s*([^\r\n]+)', email_text, re.IGNORECASE | re.MULTILINE)
         if to_match:
             metadata['recipient'] = to_match.group(1).strip()
 
@@ -181,7 +187,7 @@ class SIEMIntegration:
 
         email_lower = email_text.lower()
 
-        # Extract domains and URLs
+        # Extract domains and URLs 
         url_pattern = r'https?://([^\s/]+)'
         urls = re.findall(url_pattern, email_text, re.IGNORECASE)
         indicators['domains'] = list(set(urls))
@@ -285,6 +291,9 @@ class SIEMIntegration:
                     'source': alert.get('source'),
                     'sourcetype': alert.get('sourcetype'),
                     'index': alert.get('index'),
+                    'fields': {
+                        'alert_id': alert.get('alert_id')
+                    },
                     'event': alert['event']
                 }
 
@@ -340,7 +349,7 @@ class PhishingAPI:
         self._setup_routes()
 
         # Thread pool for concurrent processing
-        self.executor = ThreadPoolExecutor(max_workers=10)
+        self.executor = ThreadPoolExecutor(max_workers=1)
 
     def _setup_routes(self):
         """Setup Flask routes"""
@@ -409,4 +418,5 @@ class PhishingAPI:
             host=self.siem.config.api_host,
             port=self.siem.config.api_port,
             debug=False
+            
         )

@@ -149,9 +149,9 @@ class SIEMConfig:
     kafka_topic: str = "security-alerts"
 
     # Splunk HTTP Event Collector settings
-    splunk_hec_url: str = os.getenv("SPLUNK_HEC_URL", "")
-    splunk_token: str = os.getenv("SPLUNK_TOKEN", "")
-    splunk_index: str = os.getenv("SPLUNK_INDEX", "security")
+    splunk_hec_url: str = os.getenv("SPLUNK_HEC_URL")
+    splunk_token: str = os.getenv("SPLUNK_TOKEN")
+    splunk_index: str = os.getenv("SPLUNK_INDEX")
 
     # Alert settings
     alert_threshold: float = 0.7
